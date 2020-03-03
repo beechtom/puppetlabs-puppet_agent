@@ -37,14 +37,20 @@ exists() {
 
 # Check whether the apt config file has been modified, warning and exiting early if it has
 assert_unmodified_apt_config() {
-  dpkg-query -W -f='${Conffiles}\n' '*' | awk 'OFS="  "{print $2,$1}' | md5sum -c 2>/dev/null | awk -F': ' '$2 !~ /OK/{print $1}' | grep -q puppet.list
+  list_file=/etc/apt/sources.list.d/puppet.list
 
-  local result=$?
-  local file="/etc/apt/sources.list.d/puppet.list"
+  # If puppet.list exists, get its md5sum on disk and its md5sum from the puppet-release package
+  if [[ -f $list_file ]]; then
+    # For md5sum, the checksum is the first word
+    file_md5=($(md5sum "$list_file"))
+    # For dpkg-query with this output format, the sum is the second word
+    package_md5=($(dpkg-query -W -f='${Conffiles}\n' 'puppet-release' | grep -F "$list_file"))
 
-  if [ -f "$file" ] && [ "$result" -eq 0 ]; then
-    warn "Configuration file ${file} has been modified from the default. Skipping agent installation."
-    exit 0
+    # If the $package_md5 array is set, and the md5sum on disk doesn't match the md5sum from dpkg-query, it has been modified
+    if [[ $package_md5 && ${file_md5[0]} != ${package_md5[1]} ]]; then
+      warn "Configuration file $list_file has been modified from the default. Skipping agent installation."
+      exit 0
+    fi
   fi
 }
 
