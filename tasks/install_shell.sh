@@ -35,6 +35,19 @@ exists() {
   fi
 }
 
+# Check whether the apt config file has been modified, warning and exiting early if it has
+assert_unmodified_apt_config() {
+  dpkg-query -W -f='${Conffiles}\n' '*' | awk 'OFS="  "{print $2,$1}' | md5sum -c 2>/dev/null | awk -F': ' '$2 !~ /OK/{print $1}' | grep -q puppet.list
+
+  local result=$?
+  local file="/etc/apt/sources.list.d/puppet.list"
+
+  if [ -f "$file" ] && [ "$result" -eq 0 ]; then
+    warn "Configuration file ${file} has been modified from the default. Skipping agent installation."
+    exit 0
+  fi
+}
+
 # Check whether perl and LWP::Simple module are installed
 exists_perl() {
   if perl -e 'use LWP::Simple;' >/dev/null 2>&1
@@ -426,7 +439,7 @@ install_file() {
       fi
       ;;
     "deb")
-      info "installing puppetlabs apt repo with dpkg..."
+      info "Installing puppetlabs apt repo with dpkg..."
 
       if test "x$installed_version" != "xuninstalled"; then
         info "Version ${installed_version} detected..."
@@ -441,7 +454,9 @@ install_file() {
         fi
       fi
 
-      dpkg -i "$2"
+      assert_unmodified_apt_config
+
+      dpkg -i --force-confmiss "$2"
       apt-get update -y
 
       if test "$version" = 'latest'; then
